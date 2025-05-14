@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>【嗨云印】在线下单与价格计算</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js';
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .price-table th, .price-table td { padding: 8px 12px; text-align: left; }
+        select:disabled, button:disabled { background-color: #e9ecef; opacity: 0.7; cursor: not-allowed; }
+        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+        .logo-img { max-height: 80px; margin-bottom: 1rem; }
+        .pdf-preview-modal { position: fixed; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .pdf-preview-modal-content { background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 90vw; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; }
+        .pdf-preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        .pdf-preview-canvas-container { flex-grow: 1; overflow-y: auto; border: 1px solid #ccc; background-color: #f9f9f9; }
+        .pdf-preview-canvas-container canvas { max-width: 100%; height: auto; display: block; margin: 0 auto 10px auto; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .segment-item input.invalid-segment, .segment-item select.invalid-segment {
+            border-color: red !important;
+        }
+        .detailed-cost-row td {
+            padding-top: 2px;
+            padding-bottom: 2px;
+            font-size: 0.8rem; /* Smaller font for details */
+            color: #4A5568; /* Gray-700 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8 max-w-4xl">
+        <header class="mb-8 text-center">
+            <img src="https://i.postimg.cc/X7ywMj8b/16661747226997-pic-hd.jpg" alt="嗨云印 Logo" id="siteLogo" class="logo-img mx-auto">
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-800">【嗨云印】在线下单与价格计算</h1>
+            <p class="text-gray-600 mt-2">由在校学长/学姐用心经营，为您提供便捷、实惠、优质的打印服务！</p>
+        </header>
+
+        <section id="fileUploadSection" class="mb-8 p-6 bg-white rounded-xl shadow-lg">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">1. 上传文件与基本信息</h2>
+            <div class="mb-4">
+                <label for="fileUpload" class="block text-sm font-medium text-gray-700 mb-1">选择文件 (推荐PDF)</label>
+                <input type="file" id="fileUpload" name="fileUpload" accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.ppt,.pptx" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-colors">
+                <p id="fileUploadStatus" class="mt-1 text-xs text-gray-500">PDF格式可自动计算页数并支持预览。Word等其他格式请手动输入页数。推荐转换为PDF后上传。</p>
+            </div>
+            <div>
+                <label for="pagesPerDocument" class="block text-sm font-medium text-gray-700 mb-1">文档总页数 (单面算1页，双面印1张纸算2页)</label>
+                <input type="number" id="pagesPerDocument" name="pagesPerDocument" value="1" min="1" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" readonly>
+                <p class="mt-1 text-xs text-gray-500">PDF文件将自动计算总页数。此页数为参考，实际计费按下方分段设置。</p>
+            </div>
+            <div class="mt-4">
+                <button id="printPreviewBtn" class="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-gray-300" disabled>
+                    打印预览 (PDF)
+                </button>
+            </div>
+        </section>
+
+        <section id="printingOptionsSection" class="mb-8 p-6 bg-white rounded-xl shadow-lg">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">2. 打印选项</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label for="paperCategory" class="block text-sm font-medium text-gray-700 mb-1">纸张类别</label>
+                    <select id="paperCategory" name="paperCategory" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                        <option value="basic">普通数码打印纸 (黑白)</option>
+                        <option value="colorJet">彩激纸 (彩色)</option>
+                        <option value="coated">铜版纸 (彩色)</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="paperSize" class="block text-sm font-medium text-gray-700 mb-1">纸张规格</label>
+                    <select id="paperSize" name="paperSize" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                    </select>
+                </div>
+                <div id="coatedPaperWeightGroup" class="hidden">
+                    <label for="coatedPaperWeight" class="block text-sm font-medium text-gray-700 mb-1">铜版纸克重 (A4)</label>
+                    <select id="coatedPaperWeight" name="coatedPaperWeight" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                        <option value="128g">128g</option>
+                        <option value="157g">157g</option>
+                        <option value="200g">200g</option>
+                        <option value="250g">250g</option>
+                        <option value="300g">300g</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="quantity" class="block text-sm font-medium text-gray-700 mb-1">打印份数</label>
+                    <input type="number" id="quantity" name="quantity" value="1" min="1" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                </div>
+            </div>
+
+            <div id="printSegmentsSection" class="mt-6 p-4 border border-gray-200 rounded-lg shadow">
+                <h3 class="text-xl font-semibold text-gray-800 mb-3">分段打印设置</h3>
+                <div id="segmentListContainer" class="space-y-4 mb-4">
+                    </div>
+                <button id="addSegmentBtn" type="button" class="px-4 py-2 text-sm bg-green-500 hover:bg-green-600 text-white rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                    添加打印区间
+                </button>
+                <p class="text-xs text-gray-500 mt-3">
+                    请确保所有页码区间不重叠，并覆盖所有需要打印的页面。总页数参考文件上传后自动获取的页数。
+                </p>
+            </div>
+        </section>
+
+        <section id="bindingOptionsSection" class="mb-8 p-6 bg-white rounded-xl shadow-lg">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">3. 装订服务 (可选)</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label for="bindingType" class="block text-sm font-medium text-gray-700 mb-1">选择装订类型 (内页打印费另计)</label>
+                    <select id="bindingType" name="bindingType" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                        <option value="none">无装订</option>
+                        <optgroup label="胶装类 (特惠引流)">
+                            <option value="coatedNoFilm" data-note="含指定封面">铜版纸胶装 (不覆膜)</option>
+                            <option value="coatedFilm" data-note="含指定封面">铜版纸胶装 (覆膜)</option>
+                            <option value="texturedNoText" data-note="含指定封面">皮纹纸胶装 (不印字)</option>
+                            <option value="texturedText" data-note="含指定封面">皮纹纸胶装 (印字)</option>
+                            <option value="kraftNoText" data-note="含指定封面">牛皮纸胶装 (不印字)</option>
+                            <option value="kraftText" data-note="含指定封面">牛皮纸胶装 (印字)</option>
+                        </optgroup>
+                        <optgroup label="其他装订及精装类 (成本 x 2.0倍)">
+                            <option value="staple" data-note="无封面 (封面另计)">订书针装订</option>
+                            <option value="saddleStitch" data-note="不含打印封面 (封面另计)，有P数和倍数限制">骑马钉装订</option>
+                            <option value="wireO" data-note="带透明胶片，不含打印封面 (封面另计)">铁圈装订</option>
+                            <option value="looseLeaf" data-note="带透明胶片">活页夹装订</option>
+                            <option value="hardCover" data-note="高端精装，不含内页打印费">硬壳精装</option>
+                            <option value="butterfly" data-note="高端精装，不含内页打印费">蝴蝶精装</option>
+                        </optgroup>
+                    </select>
+                    <p id="bindingNote" class="mt-1 text-xs text-gray-500"></p>
+                </div>
+            </div>
+        </section>
+
+        <section id="priceSummarySection" class="mb-8 p-6 bg-gray-50 rounded-xl shadow-lg sticky top-4">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">价格总览</h2>
+            <table class="w-full price-table text-sm text-gray-700">
+                <tbody id="detailedPrintCostsBody">
+                    </tbody>
+                <tbody> <tr id="basePrintCostRow"> <td id="summaryBasePrintCostLabel">总打印费用:</td>
+                        <td id="summaryBasePrintCost" class="text-right font-medium">0.00 元</td>
+                    </tr>
+                    <tr>
+                        <td>装订费用:</td>
+                        <td id="summaryBindingCost" class="text-right font-medium">0.00 元</td>
+                    </tr>
+                    <tr id="minOrderAdjustmentRow" class="hidden"> <td id="minOrderAdjustmentLabel">最低起印:</td>
+                        <td id="summaryMinOrderAdjustment" class="text-right font-medium">0.00 元</td>
+                    </tr>
+                    <tr> <td>运费:</td>
+                        <td id="summaryShippingCost" class="text-right font-medium">0.00 元</td>
+                    </tr>
+                    <tr class="border-t-2 border-gray-300">
+                        <td class="text-lg font-semibold">预估总价:</td>
+                        <td id="summaryTotalCost" class="text-right text-lg font-semibold text-indigo-600">0.00 元</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="mt-4 text-xs text-gray-500">
+                <p>最低起印：本店打印及相关服务（不含邮费部分）最低起印为 5.00元。</p>
+                <p>包邮政策：订单总金额 (含所有打印、装订等费用) 满 25.00 元包邮。</p>
+                <p>邮费标准：订单总金额不足25.00元包邮门槛的，统一收取 6.00元 运费。</p>
+            </div>
+             <button id="submitOrder" class="mt-6 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-150 ease-in-out">
+                确认订单并导出CSV
+            </button>
+        </section>
+
+        <section id="infoSection" class="p-6 bg-white rounded-xl shadow-lg">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">其他说明与温馨提示</h2>
+            <ul class="list-disc list-inside space-y-2 text-sm text-gray-600">
+                <li><strong>无牌包装：</strong> 所有订单均采用无品牌标识的包装发货，保护您的隐私。</li>
+                <li><strong>下单流程：</strong> 此网页可辅助您估算价格并生成订单记录 (CSV文件)。请通过微信私聊发送原始打印文件、导出的订单CSV文件以及详细打印要求（如收货信息等），我们将尽快与您确认订单详情和总金额。</li>
+                <li><strong>文件格式：</strong> 推荐使用PDF格式以确保打印效果、页数自动计算和内容预览。其他格式（如Word, PPT）请提前咨询，可能需要转换为PDF，并请手动输入页数。</li>
+                <li><strong>关于我们：</strong> “嗨云印”由在校学长/学姐用心经营，致力于为同学们提供便捷、实惠、优质的打印服务！😊</li>
+                <li><strong>价格确认：</strong> 如有特殊打印需求或对价格有疑问，请随时与我们沟通确认。此计算器价格为参考，最终价格以客服确认为准。</li>
+                <li><strong>骑马钉备注：</strong> 若选择骑马钉装订，请确保文档页数 (P数) 为4的倍数，且总页数在40P（即10张纸）以下。</li>
+            </ul>
+        </section>
+
+        <footer class="mt-12 text-center text-sm text-gray-500">
+            <p>&copy; 2024-2025 【嗨云印】版权所有</p>
+        </footer>
+    </div>
+
+    <div id="pdfPreviewModal" class="pdf-preview-modal hidden">
+        <div class="pdf-preview-modal-content">
+            <div class="pdf-preview-header">
+                <h3 class="text-xl font-semibold">PDF 预览</h3>
+                <span id="previewPageInfo" class="text-sm text-gray-600"></span>
+                <button id="closePreviewModalBtn" class="text-gray-700 hover:text-red-500 text-2xl">&times;</button>
+            </div>
+            <div id="pdfPreviewCanvasContainer" class="pdf-preview-canvas-container">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const pricing = {
+            basicPrint: {
+                a7: { single: 0.03, double: 0.03 },
+                a4: { single: 0.18, double: 0.125 },
+                b5: { single: 0.15, double: 0.115 },
+                a3: { single: 0.35, double: 0.25 }
+            },
+            colorPrintJet: {
+                a4: { single: 1.00, double: 0.75 },
+                a3: { single: 2.00, double: 1.50 }
+            },
+            colorPrintCoated: {
+                '128g': { single: 1.50, double: 1.00 },
+                '157g': { single: 2.00, double: 1.25 },
+                '200g': { single: 2.25, double: 1.50 },
+                '250g': { single: 2.50, double: 1.75 },
+                '300g': { single: 3.00, double: 2.00 }
+            },
+            binding: {
+                none: 0,
+                coatedNoFilm: 7.0,
+                coatedFilm: 8.0,
+                texturedNoText: 4.0,
+                texturedText: 5.0,
+                kraftNoText: 4.0,
+                kraftText: 5.0,
+                staple: 0.4,
+                saddleStitch: 4.0,
+                wireO: 10.0,
+                looseLeaf: 10.0,
+                hardCover: 140.0,
+                butterfly: 180.0
+            },
+            policies: {
+                minOrderValue: 5.00,
+                freeShippingThreshold: 25.00,
+                shippingFee: 6.00
+            }
+        };
+
+        const fileUploadInput = document.getElementById('fileUpload');
+        const fileUploadStatusP = document.getElementById('fileUploadStatus');
+        const paperCategorySelect = document.getElementById('paperCategory');
+        const paperSizeSelect = document.getElementById('paperSize');
+        const coatedPaperWeightGroup = document.getElementById('coatedPaperWeightGroup');
+        const coatedPaperWeightSelect = document.getElementById('coatedPaperWeight');
+        const pagesPerDocumentInput = document.getElementById('pagesPerDocument');
+        const quantityInput = document.getElementById('quantity');
+        const bindingTypeSelect = document.getElementById('bindingType');
+        const bindingNoteP = document.getElementById('bindingNote');
+
+        const printPreviewBtn = document.getElementById('printPreviewBtn');
+        const pdfPreviewModal = document.getElementById('pdfPreviewModal');
+        const pdfPreviewCanvasContainer = document.getElementById('pdfPreviewCanvasContainer');
+        const closePreviewModalBtn = document.getElementById('closePreviewModalBtn');
+        const previewPageInfoSpan = document.getElementById('previewPageInfo');
+
+        const segmentListContainer = document.getElementById('segmentListContainer');
+        const addSegmentBtn = document.getElementById('addSegmentBtn');
+        let printSegments = [];
+        let segmentIdCounter = 0;
+
+        const detailedPrintCostsBody = document.getElementById('detailedPrintCostsBody');
+        const summaryBasePrintCostLabel = document.getElementById('summaryBasePrintCostLabel');
+        const summaryBasePrintCostEl = document.getElementById('summaryBasePrintCost');
+        const summaryBindingCostEl = document.getElementById('summaryBindingCost');
+        const minOrderAdjustmentRow = document.getElementById('minOrderAdjustmentRow');
+        const summaryMinOrderAdjustmentEl = document.getElementById('summaryMinOrderAdjustment');
+        const summaryShippingCostEl = document.getElementById('summaryShippingCost');
+        const summaryTotalCostEl = document.getElementById('summaryTotalCost');
+        const submitOrderButton = document.getElementById('submitOrder');
+        const siteLogo = document.getElementById('siteLogo');
+
+        let currentPdfDocument = null;
+        let pdfPreviewScrollHandler = null;
+
+        function createSegmentElement(segmentData) {
+            const segmentDiv = document.createElement('div');
+            segmentDiv.className = 'segment-item flex flex-wrap items-center gap-2 p-3 border border-gray-300 rounded-md bg-gray-50 shadow-sm';
+            segmentDiv.dataset.segmentId = segmentData.id;
+            const maxPage = parseInt(pagesPerDocumentInput.value) || 1;
+            segmentDiv.innerHTML = `
+                <span class="text-sm">从第</span>
+                <input type="number" value="${segmentData.startPage}" min="1" max="${maxPage}" class="segment-start-page w-20 px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                <span class="text-sm">页 到 第</span>
+                <input type="number" value="${segmentData.endPage}" min="1" max="${maxPage}" class="segment-end-page w-20 px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                <span class="text-sm">页，打印方式:</span>
+                <select class="segment-mode px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="single" ${segmentData.mode === 'single' ? 'selected' : ''}>单面</option>
+                    <option value="double" ${segmentData.mode === 'double' ? 'selected' : ''}>双面</option>
+                </select>
+                <button type="button" class="remove-segment-btn ml-auto px-2 py-1 text-red-600 hover:text-red-800 text-sm font-medium" title="移除此区间">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                </button>
+            `;
+            const startPageInput = segmentDiv.querySelector('.segment-start-page');
+            const endPageInput = segmentDiv.querySelector('.segment-end-page');
+            const modeSelect = segmentDiv.querySelector('.segment-mode');
+            startPageInput.addEventListener('change', (e) => updateSegmentData(segmentData.id, 'startPage', parseInt(e.target.value)));
+            endPageInput.addEventListener('change', (e) => updateSegmentData(segmentData.id, 'endPage', parseInt(e.target.value)));
+            modeSelect.addEventListener('change', (e) => updateSegmentData(segmentData.id, 'mode', e.target.value));
+            segmentDiv.querySelector('.remove-segment-btn').addEventListener('click', () => removeSegment(segmentData.id));
+            return segmentDiv;
+        }
+
+        function renderSegments() {
+            segmentListContainer.innerHTML = '';
+            printSegments.forEach(segData => {
+                const el = createSegmentElement(segData);
+                segmentListContainer.appendChild(el);
+            });
+            updateAllSegmentModesForA7();
+            calculatePrice();
+        }
+
+        function addSegment() {
+            segmentIdCounter++;
+            const totalPages = parseInt(pagesPerDocumentInput.value) || 1;
+            let newStartPage = 1;
+            if (printSegments.length > 0) {
+                newStartPage = (printSegments[printSegments.length - 1].endPage || 0) + 1;
+                if (newStartPage > totalPages && totalPages > 0) newStartPage = totalPages;
+                else if (newStartPage > totalPages && totalPages === 0) newStartPage = 1;
+            }
+             const newEndPage = totalPages > 0 ? totalPages : 1;
+
+            const newSegment = {
+                id: segmentIdCounter,
+                startPage: newStartPage > 0 ? newStartPage : 1,
+                endPage: newEndPage >= newStartPage ? newEndPage : (newStartPage > 0 ? newStartPage : 1),
+                mode: 'single'
+            };
+            printSegments.push(newSegment);
+            renderSegments();
+        }
+
+        addSegmentBtn.addEventListener('click', addSegment);
+
+        function updateSegmentData(id, key, value) {
+            const segment = printSegments.find(s => s.id === id);
+            if (segment) {
+                segment[key] = value;
+                const segmentElement = segmentListContainer.querySelector(`.segment-item[data-segment-id="${id}"]`);
+                if (segmentElement) {
+                    const startInput = segmentElement.querySelector('.segment-start-page');
+                    const endInput = segmentElement.querySelector('.segment-end-page');
+                    startInput.classList.remove('invalid-segment');
+                    endInput.classList.remove('invalid-segment');
+                    const totalDocPages = parseInt(pagesPerDocumentInput.value) || 0;
+                    if (segment.startPage > segment.endPage || segment.startPage < 1 || segment.endPage > totalDocPages) {
+                        if (segment.startPage > segment.endPage) startInput.classList.add('invalid-segment');
+                        if (segment.endPage < segment.startPage) endInput.classList.add('invalid-segment');
+                        if (segment.startPage < 1) startInput.classList.add('invalid-segment');
+                        if (segment.endPage > totalDocPages) endInput.classList.add('invalid-segment');
+                    }
+                }
+            }
+            calculatePrice();
+        }
+
+        function removeSegment(id) {
+            printSegments = printSegments.filter(s => s.id !== id);
+            renderSegments();
+        }
+
+        function updateAllSegmentModesForA7() {
+            document.querySelectorAll('.segment-item .segment-mode').forEach(modeSelect => {
+                 modeSelect.disabled = false;
+            });
+        }
+
+        fileUploadInput.addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            currentPdfDocument = null;
+            printPreviewBtn.disabled = true;
+            pdfPreviewCanvasContainer.innerHTML = '';
+            printSegments = [];
+            segmentIdCounter = 0;
+            pagesPerDocumentInput.readOnly = true;
+
+            if (!file) {
+                fileUploadStatusP.textContent = '未选择文件。PDF格式可自动计算页数并支持预览。Word等其他格式请手动输入页数。';
+                fileUploadStatusP.className = 'mt-1 text-xs text-gray-500';
+                pagesPerDocumentInput.value = 1;
+                addSegment();
+                calculatePrice();
+                return;
+            }
+
+            const fileType = file.type;
+            const fileName = file.name.toLowerCase();
+
+            if (fileType === "application/pdf") {
+                fileUploadStatusP.textContent = '正在读取PDF页数...';
+                fileUploadStatusP.className = 'mt-1 text-xs text-blue-600';
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const typedarray = new Uint8Array(e.target.result);
+                    pdfjsLib.getDocument(typedarray).promise.then(function(pdfDoc) {
+                        currentPdfDocument = pdfDoc;
+                        printPreviewBtn.disabled = false;
+                        pagesPerDocumentInput.value = pdfDoc.numPages;
+                        fileUploadStatusP.textContent = `PDF页数自动获取成功: ${pdfDoc.numPages} 页。可点击预览。`;
+                        fileUploadStatusP.className = 'mt-1 text-xs text-green-600';
+                        printSegments = [];
+                        segmentIdCounter = 0;
+                        addSegment();
+                        calculatePrice();
+                    }).catch(function(error) {
+                        fileUploadStatusP.textContent = '无法自动读取PDF页数，请手动输入。';
+                        fileUploadStatusP.className = 'mt-1 text-xs text-red-600';
+                        pagesPerDocumentInput.value = 1;
+                        pagesPerDocumentInput.readOnly = false;
+                        addSegment();
+                        calculatePrice();
+                    });
+                };
+                reader.onerror = function() {
+                    fileUploadStatusP.textContent = '读取文件失败，请重试或手动输入页数。';
+                    fileUploadStatusP.className = 'mt-1 text-xs text-red-600';
+                    pagesPerDocumentInput.value = 1;
+                    pagesPerDocumentInput.readOnly = false;
+                    addSegment();
+                    calculatePrice();
+                };
+                reader.readAsArrayBuffer(file);
+            } else if (fileType === "application/msword" ||
+                       fileType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+                       fileName.endsWith(".doc") || fileName.endsWith(".docx")) {
+                fileUploadStatusP.textContent = 'Word文档不支持自动计算页数和预览，请手动输入准确总页数后，再设置打印区间。';
+                fileUploadStatusP.className = 'mt-1 text-xs text-orange-600 font-semibold';
+                pagesPerDocumentInput.value = 1;
+                pagesPerDocumentInput.readOnly = false;
+                pagesPerDocumentInput.focus();
+                addSegment();
+                calculatePrice();
+            } else {
+                fileUploadStatusP.textContent = '不支持的文件格式。请手动输入总页数后，再设置打印区间。推荐使用PDF。';
+                fileUploadStatusP.className = 'mt-1 text-xs text-red-600';
+                pagesPerDocumentInput.value = 1;
+                pagesPerDocumentInput.readOnly = false;
+                addSegment();
+                calculatePrice();
+            }
+        });
+
+        pagesPerDocumentInput.addEventListener('change', () => {
+            if (fileUploadInput.files.length === 0 || (fileUploadInput.files[0] && fileUploadInput.files[0].type !== "application/pdf")) {
+                printSegments = [];
+                segmentIdCounter = 0;
+                addSegment();
+            }
+        });
+
+        function updatePreviewPageInfoOnScroll() { /* ... (保持不变) ... */
+            if (!currentPdfDocument || !pdfPreviewCanvasContainer.querySelector('canvas')) {
+                previewPageInfoSpan.textContent = `共 ${currentPdfDocument ? currentPdfDocument.numPages : 0} 页`;
+                return;
+            }
+            const containerScrollTop = pdfPreviewCanvasContainer.scrollTop;
+            const canvases = pdfPreviewCanvasContainer.querySelectorAll('canvas');
+            let currentPageInView = 1;
+            let minDistance = Infinity;
+            for (const canvas of canvases) {
+                const distance = Math.abs(canvas.offsetTop - containerScrollTop);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    currentPageInView = parseInt(canvas.dataset.pageNumber);
+                }
+                const canvasCenter = canvas.offsetTop + canvas.offsetHeight / 2;
+                if (canvasCenter >= containerScrollTop && canvasCenter <= containerScrollTop + pdfPreviewCanvasContainer.clientHeight) {
+                    currentPageInView = parseInt(canvas.dataset.pageNumber);
+                    break;
+                }
+            }
+            previewPageInfoSpan.textContent = `第 ${currentPageInView} / ${currentPdfDocument.numPages} 页`;
+        }
+
+        async function renderAllPdfPages() { /* ... (保持不变) ... */
+            if (!currentPdfDocument) return;
+            pdfPreviewCanvasContainer.innerHTML = '';
+            previewPageInfoSpan.textContent = `共 ${currentPdfDocument.numPages} 页，正在渲染 1/${currentPdfDocument.numPages}...`;
+            pdfPreviewModal.classList.remove('hidden');
+            const scale = 1.5;
+            if (pdfPreviewScrollHandler) {
+                pdfPreviewCanvasContainer.removeEventListener('scroll', pdfPreviewScrollHandler);
+            }
+            pdfPreviewScrollHandler = throttle(updatePreviewPageInfoOnScroll, 100);
+            pdfPreviewCanvasContainer.addEventListener('scroll', pdfPreviewScrollHandler);
+
+            for (let pageNum = 1; pageNum <= currentPdfDocument.numPages; pageNum++) {
+                try {
+                    const page = await currentPdfDocument.getPage(pageNum);
+                    const viewport = page.getViewport({ scale: scale });
+                    const canvas = document.createElement('canvas');
+                    canvas.dataset.pageNumber = pageNum;
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    const canvasContext = canvas.getContext('2d');
+                    const renderContext = { canvasContext: canvasContext, viewport: viewport };
+                    await page.render(renderContext).promise;
+                    pdfPreviewCanvasContainer.appendChild(canvas);
+                    if (pageNum === currentPdfDocument.numPages) {
+                         previewPageInfoSpan.textContent = `第 1 / ${currentPdfDocument.numPages} 页 (预览完成)`;
+                         updatePreviewPageInfoOnScroll();
+                    } else {
+                         previewPageInfoSpan.textContent = `共 ${currentPdfDocument.numPages} 页，正在渲染 ${pageNum + 1}/${currentPdfDocument.numPages}...`;
+                    }
+                } catch (err) {
+                    console.error("渲染PDF页面时出错:", pageNum, err);
+                    const errorP = document.createElement('p');
+                    errorP.textContent = `渲染第 ${pageNum} 页失败。`;
+                    errorP.className = 'text-red-500 text-center py-2';
+                    pdfPreviewCanvasContainer.appendChild(errorP);
+                }
+            }
+            if (pdfPreviewCanvasContainer.children.length > 0 && currentPdfDocument.numPages > 0) {
+                 updatePreviewPageInfoOnScroll();
+            } else if (currentPdfDocument.numPages > 0) {
+                 previewPageInfoSpan.textContent = `无法渲染PDF (共 ${currentPdfDocument.numPages} 页)`;
+            } else {
+                 previewPageInfoSpan.textContent = `无页面可预览`;
+            }
+        }
+
+        printPreviewBtn.addEventListener('click', function() {
+            if (currentPdfDocument) { renderAllPdfPages(); }
+            else { alert("请先上传一个有效的PDF文件以进行预览。"); }
+        });
+
+        closePreviewModalBtn.addEventListener('click', function() {
+            pdfPreviewModal.classList.add('hidden');
+            pdfPreviewCanvasContainer.innerHTML = '';
+            previewPageInfoSpan.textContent = '';
+            if (pdfPreviewScrollHandler) {
+                pdfPreviewCanvasContainer.removeEventListener('scroll', pdfPreviewScrollHandler);
+                pdfPreviewScrollHandler = null;
+            }
+        });
+
+        pdfPreviewModal.addEventListener('click', function(event) {
+            if (event.target === pdfPreviewModal) { closePreviewModalBtn.click(); }
+        });
+
+        function throttle(func, limit) { /* ... (保持不变) ... */
+            let lastFunc; let lastRan;
+            return function(...args) {
+                const context = this;
+                if (!lastRan) { func.apply(context, args); lastRan = Date.now(); }
+                else { clearTimeout(lastFunc); lastFunc = setTimeout(function() {
+                        if ((Date.now() - lastRan) >= limit) { func.apply(context, args); lastRan = Date.now(); }
+                    }, limit - (Date.now() - lastRan));
+                }
+            }
+        }
+
+        function populatePaperSizes() {
+            const category = paperCategorySelect.value;
+            let options = '';
+            coatedPaperWeightGroup.classList.add('hidden');
+            if (category === 'basic') {
+                options = `<option value="a4">A4</option><option value="b5">B5</option><option value="a3">A3</option><option value="a7">A7 (小标签等)</option>`;
+            } else if (category === 'colorJet') {
+                options = `<option value="a4">A4</option><option value="a3">A3</option>`;
+            } else if (category === 'coated') {
+                options = `<option value="a4">A4 (铜版纸仅支持A4)</option>`;
+                coatedPaperWeightGroup.classList.remove('hidden');
+            }
+            paperSizeSelect.innerHTML = options;
+            if (category === 'coated') { paperSizeSelect.value = 'a4'; }
+            updateAllSegmentModesForA7();
+            calculatePrice();
+        }
+
+        function updateBindingNote() {
+            const selectedOption = bindingTypeSelect.options[bindingTypeSelect.selectedIndex];
+            const note = selectedOption.dataset.note;
+            bindingNoteP.textContent = note ? `备注: ${note}` : '';
+        }
+
+        function calculatePrice() {
+            const category = paperCategorySelect.value;
+            const currentPaperSize = paperSizeSelect.value;
+            const coatedWeight = coatedPaperWeightSelect.value;
+            const quantity = parseInt(quantityInput.value) || 0;
+            const binding = bindingTypeSelect.value;
+            const totalDocPages = parseInt(pagesPerDocumentInput.value) || 0;
+
+            let totalSegmentPrintCostForOneCopy = 0;
+            detailedPrintCostsBody.innerHTML = '';
+
+            if (quantity <= 0) {
+                 summaryBasePrintCostEl.textContent = '0.00 元';
+                 summaryBindingCostEl.textContent = '0.00 元';
+                 minOrderAdjustmentRow.classList.add('hidden');
+                 summaryShippingCostEl.textContent = '0.00 元';
+                 summaryTotalCostEl.textContent = '0.00 元';
+                 summaryBasePrintCostLabel.textContent = `总打印费用 (共 ${quantity} 份):`;
+                 return;
+            }
+
+            for (const segment of printSegments) {
+                const startPage = parseInt(segment.startPage) || 0;
+                const endPage = parseInt(segment.endPage) || 0;
+                let mode = segment.mode;
+                let isValidSegment = true;
+
+                const segmentElement = segmentListContainer.querySelector(`.segment-item[data-segment-id="${segment.id}"]`);
+                if (segmentElement) {
+                    const startInputEl = segmentElement.querySelector('.segment-start-page');
+                    const endInputEl = segmentElement.querySelector('.segment-end-page');
+                    startInputEl.classList.remove('invalid-segment');
+                    endInputEl.classList.remove('invalid-segment');
+                    if (startPage <= 0 || endPage < startPage || endPage > totalDocPages) {
+                        isValidSegment = false;
+                        if (startPage <= 0 || startPage > endPage) startInputEl.classList.add('invalid-segment');
+                        if (endPage < startPage || endPage > totalDocPages) endInputEl.classList.add('invalid-segment');
+                    }
+                }
+                if (!isValidSegment) continue;
+
+                const currentEndPage = Math.min(endPage, totalDocPages);
+                if (startPage > currentEndPage) continue;
+
+                const segmentPages = currentEndPage - startPage + 1;
+                let segmentCostPerPageSide = 0;
+                let unitPriceDescription = "";
+
+                let paperDisplayName = "";
+                let colorDisplayName = "";
+
+                if (category === 'basic') {
+                    paperDisplayName = "普通纸";
+                    colorDisplayName = "黑白";
+                    if (pricing.basicPrint[currentPaperSize]) {
+                        segmentCostPerPageSide = pricing.basicPrint[currentPaperSize][mode];
+                    }
+                } else if (category === 'colorJet') {
+                    paperDisplayName = "彩激纸";
+                    colorDisplayName = "彩色";
+                    if (pricing.colorPrintJet[currentPaperSize]) {
+                        segmentCostPerPageSide = pricing.colorPrintJet[currentPaperSize][mode];
+                    }
+                } else if (category === 'coated') {
+                    paperDisplayName = `${coatedPaperWeightSelect.options[coatedPaperWeightSelect.selectedIndex].text}铜版纸`;
+                    colorDisplayName = "彩色";
+                    if (pricing.colorPrintCoated[coatedWeight]) {
+                        segmentCostPerPageSide = pricing.colorPrintCoated[coatedWeight][mode];
+                    }
+                }
+
+                unitPriceDescription = `(单价: ${segmentCostPerPageSide.toFixed(3)} 元/面)`;
+                const costForThisSegmentOneCopy = segmentCostPerPageSide * segmentPages;
+                totalSegmentPrintCostForOneCopy += costForThisSegmentOneCopy;
+
+                const segmentDescription = `打印区间 (${startPage}-${currentEndPage}页, ${currentPaperSize.toUpperCase()} ${paperDisplayName} ${colorDisplayName} ${mode === 'single' ? '单面' : '双面'}) ${unitPriceDescription}`;
+
+                const tr = document.createElement('tr');
+                tr.className = 'detailed-cost-row';
+                tr.innerHTML = `
+                    <td>${segmentDescription}:</td>
+                    <td class="text-right font-medium">${costForThisSegmentOneCopy.toFixed(2)} 元</td>
+                `;
+                detailedPrintCostsBody.appendChild(tr);
+            }
+
+            const totalRawPrintCost = totalSegmentPrintCostForOneCopy * quantity;
+            summaryBasePrintCostLabel.textContent = `总打印费用 (共 ${quantity} 份):`;
+            summaryBasePrintCostEl.textContent = `${totalRawPrintCost.toFixed(2)} 元`;
+
+            const totalBindingCost = (pricing.binding[binding] || 0) * quantity;
+            summaryBindingCostEl.textContent = `${totalBindingCost.toFixed(2)} 元`;
+
+            let subtotalBeforeMinChargeAndBinding = totalRawPrintCost + totalBindingCost;
+            let finalSubtotalForShippingAndTotal = subtotalBeforeMinChargeAndBinding;
+
+            minOrderAdjustmentRow.classList.add('hidden');
+            if (subtotalBeforeMinChargeAndBinding > 0 && subtotalBeforeMinChargeAndBinding < pricing.policies.minOrderValue) {
+                finalSubtotalForShippingAndTotal = pricing.policies.minOrderValue;
+                summaryMinOrderAdjustmentEl.textContent = `最低起印 ${pricing.policies.minOrderValue.toFixed(2)} 元`; // Text for the value cell
+                minOrderAdjustmentRow.classList.remove('hidden');
+            }
+
+            let shippingCost = 0;
+            if (finalSubtotalForShippingAndTotal > 0 && finalSubtotalForShippingAndTotal < pricing.policies.freeShippingThreshold) {
+                shippingCost = pricing.policies.shippingFee;
+            }
+            summaryShippingCostEl.textContent = `${shippingCost.toFixed(2)} 元`;
+
+            const finalTotal = finalSubtotalForShippingAndTotal + shippingCost;
+            summaryTotalCostEl.textContent = `${finalTotal.toFixed(2)} 元`;
+        }
+
+        function generateOrderNumber() { /* ... (保持不变) ... */
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = (now.getMonth() + 1).toString().padStart(2, '0');
+            const day = now.getDate().toString().padStart(2, '0');
+            const hours = now.getHours().toString().padStart(2, '0');
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const seconds = now.getSeconds().toString().padStart(2, '0');
+            const randomStr = Math.random().toString(36).substring(2, 7).toUpperCase();
+            return `HYY-${year}${month}${day}-${hours}${minutes}${seconds}-${randomStr}`;
+        }
+
+        function escapeCsvCell(cellData) { /* ... (保持不变) ... */
+            if (typeof cellData === 'number') {
+                return cellData.toString();
+            }
+            if (typeof cellData === 'string') {
+                if (cellData.includes(',') || cellData.includes('"') || cellData.includes('\n')) {
+                    return `"${cellData.replace(/"/g, '""')}"`;
+                }
+                return cellData;
+            }
+            return '';
+        }
+
+        function exportOrderToCsv(orderDetails) {
+            const headers = [
+                "订单号", "下单时间", "文件名", "文档总页数", "打印份数",
+                "纸张类别", "纸张规格", "铜版纸克重",
+                "打印区间详情",
+                "装订类型", "总打印费用(元)", "装订费用(元)",
+                "运费(元)", "预估总价(元)"
+            ];
+            const row = [
+                orderDetails.orderNumber, orderDetails.orderTime, orderDetails.fileName, orderDetails.docTotalPages, orderDetails.quantity,
+                orderDetails.paperCategory, orderDetails.paperSize, orderDetails.coatedWeight,
+                orderDetails.segmentDetails,
+                orderDetails.binding,
+                orderDetails.basePrintCost.replace(' 元',''), orderDetails.bindingCost.replace(' 元',''),
+                orderDetails.shippingCost.replace(' 元',''), orderDetails.estimatedTotal.replace(' 元','')
+            ];
+            let csvContent = "\uFEFF";
+            csvContent += headers.map(header => escapeCsvCell(header)).join(',') + '\r\n';
+            csvContent += row.map(cell => escapeCsvCell(cell)).join(',') + '\r\n';
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", `嗨云印订单_${orderDetails.orderNumber}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }
+         }
+
+        // Event Listeners
+        paperCategorySelect.addEventListener('change', () => { populatePaperSizes(); });
+        paperSizeSelect.addEventListener('change', () => {
+            updateAllSegmentModesForA7();
+            calculatePrice();
+        });
+        coatedPaperWeightSelect.addEventListener('change', calculatePrice);
+        quantityInput.addEventListener('input', calculatePrice);
+        bindingTypeSelect.addEventListener('change', () => { updateBindingNote(); calculatePrice(); });
+
+        submitOrderButton.addEventListener('click', () => {
+            const orderNumber = generateOrderNumber();
+            const now = new Date();
+            const orderTime = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+            const segmentDetailsString = printSegments.map(s => {
+                let segmentCostPerPageSide = 0;
+                let tempMode = s.mode;
+                const currentPaperSize = paperSizeSelect.value;
+                const category = paperCategorySelect.value;
+                const coatedWeightVal = coatedPaperWeightSelect.value;
+                if (category === 'basic' && currentPaperSize === 'a7') tempMode = 'single';
+                if (category === 'basic') {
+                    if (pricing.basicPrint[currentPaperSize]) segmentCostPerPageSide = pricing.basicPrint[currentPaperSize][tempMode];
+                } else if (category === 'colorJet') {
+                    if (pricing.colorPrintJet[currentPaperSize]) segmentCostPerPageSide = pricing.colorPrintJet[currentPaperSize][tempMode];
+                } else if (category === 'coated') {
+                    if (pricing.colorPrintCoated[coatedWeightVal]) segmentCostPerPageSide = pricing.colorPrintCoated[coatedWeightVal][tempMode];
+                }
+                return `${s.startPage}-${s.endPage}(${s.mode === 'single' ? '单面' : '双面'}, 单价:${segmentCostPerPageSide.toFixed(3)})`;
+            }).join('; ');
+
+            const orderDetails = {
+                orderNumber: orderNumber, orderTime: orderTime,
+                fileName: fileUploadInput.files[0] ? fileUploadInput.files[0].name : "未上传文件",
+                docTotalPages: pagesPerDocumentInput.value,
+                quantity: quantityInput.value,
+                paperCategory: paperCategorySelect.options[paperCategorySelect.selectedIndex].text,
+                paperSize: paperSizeSelect.options[paperSizeSelect.selectedIndex].text,
+                coatedWeight: coatedPaperWeightGroup.classList.contains('hidden') ? 'N/A' : coatedPaperWeightSelect.value,
+                segmentDetails: segmentDetailsString,
+                binding: bindingTypeSelect.options[bindingTypeSelect.selectedIndex].text,
+                basePrintCost: summaryBasePrintCostEl.textContent,
+                bindingCost: summaryBindingCostEl.textContent,
+                shippingCost: summaryShippingCostEl.textContent,
+                estimatedTotal: summaryTotalCostEl.textContent,
+                logoUsed: siteLogo.src
+            };
+            exportOrderToCsv(orderDetails);
+            alert(`订单已生成！\n订单号: ${orderNumber}\n订单详情已导出为CSV文件，请查收下载。\n\n请通过微信私聊发送原始打印文件、导出的订单CSV文件和收货信息等以最终确认订单。`);
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            populatePaperSizes();
+            updateBindingNote();
+            addSegment();
+            calculatePrice();
+        });
+    </script>
+
+</body>
+</html>

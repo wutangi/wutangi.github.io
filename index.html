@@ -27,13 +27,13 @@
         .detailed-cost-row td { padding-top: 2px; padding-bottom: 2px; font-size: 0.8rem; color: #4A5568; }
         .payment-buttons-container { margin-top: 1rem; display: flex; gap: 0.5rem; }
         .payment-buttons-container button { flex-grow: 1; }
-        .qr-code-image { /* Shared style for QR code images */
+        .qr-code-image { 
             max-width: 250px; 
             max-height: 250px;
             width: auto;
             height: auto;
-            margin: 1rem auto; /* Centering and margin */
-            border: 1px solid #ddd; /* Optional border */
+            margin: 1rem auto; 
+            border: 1px solid #ddd; 
         }
         .file-item { transition: background-color 0.2s ease-in-out; }
         .file-item.active-file { background-color: #ebf8ff; border-left: 4px solid #3b82f6; }
@@ -120,7 +120,7 @@
                                 <option value="kraftNoText" data-note="含指定封面">牛皮纸胶装 (不印字) (4.00 元)</option>
                                 <option value="kraftText" data-note="含指定封面">牛皮纸胶装 (印字) (5.00 元)</option>
                             </optgroup>
-                            <optgroup label="其他装订及精装类 (成本 x 2.0倍)">
+                            <optgroup label="其他装订及精装类 ">
                                 <option value="staple" data-note="无封面 (封面另计)">订书针装订 (0.40 元)</option>
                                 <option value="saddleStitch" data-note="不含打印封面 (封面另计)，有P数和倍数限制">骑马钉装订 (4.00 元)</option>
                                 <option value="wireO" data-note="带透明胶片，不含打印封面 (封面另计)">铁圈装订 (10.00 元)</option>
@@ -181,11 +181,10 @@
             </div>
             <div class="action-buttons-container mt-6">
                  <button id="submitOrder" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-150 ease-in-out">
-                    确认订单并导出CSV
+                    导出订单信息
                 </button>
                 </div>
-            <div class="payment-buttons-container">
-                <button id="alipayBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-colors">
+            <div class="payment-buttons-container"> <button id="alipayBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-colors">
                     支付宝支付 
                 </button>
                 <button id="qrPayBtn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-colors">
@@ -345,7 +344,7 @@
 
             totalFilesToProcess = files.length;
             filesProcessedCounter = 0;
-            fileUploadStatusP.textContent = `已选择 ${files.length} 个文件，正在处理 1/${totalFilesToProcess}...`;
+            fileUploadStatusP.textContent = `已选择 ${files.length} 个文件，正在上传 1/${totalFilesToProcess}...`;
             fileUploadStatusP.className = 'mt-1 text-xs text-blue-600';
             
             Array.from(files).forEach(file => {
@@ -373,16 +372,16 @@
         function checkAllFilesProcessed() {
             filesProcessedCounter++;
             if (filesProcessedCounter < totalFilesToProcess) {
-                 fileUploadStatusP.textContent = `已选择 ${totalFilesToProcess} 个文件，正在处理 ${filesProcessedCounter + 1}/${totalFilesToProcess}...`;
+                 fileUploadStatusP.textContent = `已选择 ${totalFilesToProcess} 个文件，正在上传 ${filesProcessedCounter + 1}/${totalFilesToProcess}...`;
             } else if (filesProcessedCounter === totalFilesToProcess) {
-                fileUploadStatusP.textContent = `${totalFilesToProcess} 个文件处理完成。`;
+                fileUploadStatusP.textContent = `${totalFilesToProcess} 个文件上传完成。`;
                 fileUploadStatusP.className = 'mt-1 text-xs text-green-600';
                 renderFileList();
                 if (uploadedFilesData.length > 0 && !activeFileId) {
                     setActiveFile(uploadedFilesData[0].id); 
                 }
                 setTimeout(() => {
-                    if (fileUploadStatusP.textContent === `${totalFilesToProcess} 个文件处理完成。`) { 
+                    if (fileUploadStatusP.textContent === `${totalFilesToProcess} 个文件上传完成。`) { 
                          fileUploadStatusP.textContent = 'PDF格式可自动计算页数并支持预览。Word等其他格式请手动输入页数。推荐转换为PDF后上传。';
                          fileUploadStatusP.className = 'mt-1 text-xs text-gray-500';
                     }
@@ -983,39 +982,37 @@
         }
 
         function exportOrderToCsv(orderData) { 
-            const commonHeaders = [
+            const headers = [
                 "订单号", "下单时间", 
-                "总打印费用(元)", "总装订费用(元)", "运费(元)", "预估总价(元)"
-            ];
-            const fileSpecificHeaders = [
-                "文件名", "文件总页数", "文件打印份数", "文件纸张类别", "文件纸张规格", "文件铜版纸克重", "文件装订类型", "文件打印区间详情"
+                "文件名", "文件总页数", "文件打印份数", "文件纸张类别", "文件纸张规格", "文件铜版纸克重", "文件装订类型", "文件打印区间详情", "该文件打印费用(元)", "该文件装订费用(元)",
+                "总打印费用(订单级)", "总装订费用(订单级)", "运费(订单级)", "预估总价(订单级)"
             ];
             
             let csvContent = "\uFEFF"; 
-            csvContent += commonHeaders.join(',') + ',' + fileSpecificHeaders.join(',') + '\r\n';
+            csvContent += headers.map(header => escapeCsvCell(header)).join(',') + '\r\n';
 
             if (orderData.files && orderData.files.length > 0) {
                 orderData.files.forEach(fileDetail => {
-                    const commonRowData = [
+                    const rowData = [
                         orderData.orderNumber, orderData.orderTime,
+                        fileDetail.fileName, fileDetail.docTotalPages, fileDetail.quantity,
+                        fileDetail.paperCategoryText, fileDetail.paperSizeText, fileDetail.coatedWeight,
+                        fileDetail.bindingTypeText, fileDetail.segmentDetails,
+                        fileDetail.filePrintCost.toFixed(2), fileDetail.fileBindingCost.toFixed(2),
                         orderData.basePrintCost.replace(' 元',''), orderData.bindingCost.replace(' 元',''), 
                         orderData.shippingCost.replace(' 元',''), orderData.estimatedTotal.replace(' 元','')
                     ];
-                    const fileRowData = [
-                        fileDetail.fileName, fileDetail.docTotalPages, fileDetail.quantity,
-                        fileDetail.paperCategoryText, fileDetail.paperSizeText, fileDetail.coatedWeight,
-                        fileDetail.bindingTypeText, fileDetail.segmentDetails
-                    ];
-                    csvContent += commonRowData.map(escapeCsvCell).join(',') + ',' + fileRowData.map(escapeCsvCell).join(',') + '\r\n';
+                    csvContent += rowData.map(escapeCsvCell).join(',') + '\r\n';
                 });
             } else { 
-                 const commonRowData = [
-                    orderData.orderNumber, orderData.orderTime,
-                    orderData.basePrintCost.replace(' 元',''), orderData.bindingCost.replace(' 元',''), 
-                    orderData.shippingCost.replace(' 元',''), orderData.estimatedTotal.replace(' 元','')
-                ];
-                const emptyFileRowData = Array(fileSpecificHeaders.length).fill('');
-                csvContent += commonRowData.map(escapeCsvCell).join(',') + ',' + emptyFileRowData.join(',') + '\r\n';
+                 const emptyRow = Array(headers.length).fill('');
+                 emptyRow[0] = orderData.orderNumber;
+                 emptyRow[1] = orderData.orderTime;
+                 emptyRow[12] = orderData.basePrintCost.replace(' 元','');
+                 emptyRow[13] = orderData.bindingCost.replace(' 元','');
+                 emptyRow[14] = orderData.shippingCost.replace(' 元','');
+                 emptyRow[15] = orderData.estimatedTotal.replace(' 元','');
+                csvContent += emptyRow.map(escapeCsvCell).join(',') + '\r\n';
             }
 
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1077,10 +1074,33 @@
                 
                 let bindingTypeTextVal = "无装订";
                 const bindingOption = Array.from(activeFileBindingTypeSelect.options).find(opt => opt.value === fileEntry.bindingType);
-                if(bindingOption) bindingTypeTextVal = bindingOption.textContent; // Get full text including price for CSV
+                if(bindingOption) bindingTypeTextVal = bindingOption.textContent; 
+
+                // Calculate individual file print and binding costs
+                let filePrintCostOneCopy = 0;
+                fileEntry.printSegments.forEach(segment => {
+                    const startPage = parseInt(segment.startPage) || 0;
+                    const endPage = parseInt(segment.endPage) || 0;
+                    let mode = segment.mode;
+                    if (startPage <= 0 || endPage < startPage || endPage > fileEntry.docTotalPages) return;
+                    const currentEndPage = Math.min(endPage, fileEntry.docTotalPages);
+                    if (startPage > currentEndPage) return;
+                    const segmentPages = currentEndPage - startPage + 1;
+                    let segmentCostPerPageSide = 0;
+                    if (fileEntry.paperCategory === 'basic') {
+                        if (pricing.basicPrint[fileEntry.paperSize]) segmentCostPerPageSide = pricing.basicPrint[fileEntry.paperSize][mode];
+                    } else if (fileEntry.paperCategory === 'colorJet') {
+                        if (pricing.colorPrintJet[fileEntry.paperSize]) segmentCostPerPageSide = pricing.colorPrintJet[fileEntry.paperSize][mode];
+                    } else if (fileEntry.paperCategory === 'coated') {
+                        if (pricing.colorPrintCoated[fileEntry.coatedPaperWeight]) segmentCostPerPageSide = pricing.colorPrintCoated[fileEntry.coatedPaperWeight][mode];
+                    }
+                    filePrintCostOneCopy += segmentCostPerPageSide * segmentPages;
+                });
+                const individualFilePrintCost = filePrintCostOneCopy * fileEntry.quantity;
+                const individualFileBindingCost = (pricing.binding[fileEntry.bindingType] || 0) * fileEntry.quantity;
 
 
-                let fileInfoString = `文件名: ${fileEntry.fileName}, 总页数: ${fileEntry.docTotalPages}, 份数: ${fileEntry.quantity}, 装订: ${bindingTypeTextVal.split('(')[0].trim()}, 纸张类别: ${paperCategoryText}, 纸张规格: ${paperSizeText}, 铜版纸克重: ${coatedWeightDisplay}, 区间: ${segmentDetails}`;
+                let fileInfoString = `文件名: ${fileEntry.fileName}, 总页数: ${fileEntry.docTotalPages}, 份数: ${fileEntry.quantity}, 装订: ${bindingTypeTextVal.split('(')[0].trim()}, 纸张类别: ${paperCategoryText}, 纸张规格: ${paperSizeText}, 铜版纸克重: ${coatedWeightDisplay}, 区间: ${segmentDetails}, 文件打印费: ${individualFilePrintCost.toFixed(2)}元, 文件装订费: ${individualFileBindingCost.toFixed(2)}元`;
                 
                 let returnObj = { 
                     details: fileInfoString, 
@@ -1090,8 +1110,10 @@
                     paperCategoryText: paperCategoryText,
                     paperSizeText: paperSizeText,
                     coatedWeight: coatedWeightDisplay,
-                    bindingTypeText: bindingTypeTextVal, // For CSV, keep the full text with price
-                    segmentDetails: segmentDetails
+                    bindingTypeText: bindingTypeTextVal, 
+                    segmentDetails: segmentDetails,
+                    filePrintCost: individualFilePrintCost, 
+                    fileBindingCost: individualFileBindingCost 
                  };
 
                 if (includeFileObjects) {
@@ -1116,9 +1138,6 @@
 
 
         // Event Listeners
-        // quantityInput.addEventListener('input', calculatePrice); // Now per-file
-        // bindingTypeSelect.addEventListener('change', () => { updateBindingNote(); calculatePrice(); }); // Now per-file
-        
         submitOrderButton.addEventListener('click', () => {
             if (uploadedFilesData.length === 0) {
                 alert("请至少上传一个文件再提交订单。");
@@ -1127,6 +1146,9 @@
             const orderDetails = getOrderDetailsForApi(false); 
             exportOrderToCsv(orderDetails); 
             
+            // submitOrderButton.classList.add('hidden'); // No longer hiding
+            // document.querySelector('.payment-buttons-container').classList.remove('hidden'); // No longer showing based on this click
+
             alert(`订单已生成！\n订单号: ${orderDetails.orderNumber}\n订单详情CSV文件已开始下载。\n\n请通过微信私聊发送原始打印文件、导出的订单CSV文件和收货信息等以最终确认订单。`);
         });
 
@@ -1165,8 +1187,6 @@
 
 
         document.addEventListener('DOMContentLoaded', () => {
-            // populatePaperSizes(); // Called when a file becomes active
-            // updateBindingNote(); // Now updateActiveFileBindingNote is used
             renderFileList(); 
             calculatePrice();
         });

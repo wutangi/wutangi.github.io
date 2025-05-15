@@ -27,11 +27,17 @@
         .detailed-cost-row td { padding-top: 2px; padding-bottom: 2px; font-size: 0.8rem; color: #4A5568; }
         .payment-buttons-container { margin-top: 1rem; display: flex; gap: 0.5rem; }
         .payment-buttons-container button { flex-grow: 1; }
-        #qrCodeImg { max-width: 250px; max-height: 250px; width: auto; height: auto; }
+        .qr-code-image { /* Shared style for QR code images */
+            max-width: 250px; 
+            max-height: 250px;
+            width: auto;
+            height: auto;
+            margin: 1rem auto; /* Centering and margin */
+            border: 1px solid #ddd; /* Optional border */
+        }
         .file-item { transition: background-color 0.2s ease-in-out; }
         .file-item.active-file { background-color: #ebf8ff; border-left: 4px solid #3b82f6; }
         .action-buttons-container button, .payment-buttons-container button { margin-bottom: 0.5rem; }
-        /* .website-qr-code class is no longer needed */
     </style>
 </head>
 <body class="bg-gray-100">
@@ -202,7 +208,7 @@
 
         <footer class="mt-12 text-center text-sm text-gray-500">
             <p>&copy; 2024-2025 【嗨云印】版权所有</p>
-            </footer>
+        </footer>
     </div>
 
     <div id="pdfPreviewModal" class="modal-overlay hidden">
@@ -220,13 +226,26 @@
     <div id="qrPaymentModal" class="modal-overlay hidden">
         <div class="modal-content qr-payment-modal-content">
             <div class="modal-header">
-                <h3 class="text-xl font-semibold">扫码支付 </h3>
+                <h3 class="text-xl font-semibold">微信扫码支付</h3>
                 <button id="closeQrModalBtn" class="text-gray-700 hover:text-red-500 text-2xl">&times;</button>
             </div>
-            <img id="qrCodeImg" src="https://i.postimg.cc/nhtXjSRD/51747244584-pic.jpg" alt="微信付款二维码" class="mx-auto my-4 border">
+            <img id="qrCodeImg" src="https://i.postimg.cc/nhtXjSRD/51747244584-pic.jpg" alt="微信付款二维码" class="qr-code-image">
             <p class="text-lg font-semibold mb-2">请使用微信扫描上方二维码完成支付</p>
             <p class="text-2xl font-bold text-red-600 mb-4" id="qrPaymentAmount">金额: 0.00 元</p>
-            <p class="text-xs text-gray-500"></p>
+            <p class="text-xs text-gray-500">(模拟支付)</p>
+        </div>
+    </div>
+
+    <div id="alipayQrPaymentModal" class="modal-overlay hidden">
+        <div class="modal-content qr-payment-modal-content">
+            <div class="modal-header">
+                <h3 class="text-xl font-semibold">支付宝扫码支付</h3>
+                <button id="closeAlipayQrModalBtn" class="text-gray-700 hover:text-red-500 text-2xl">&times;</button>
+            </div>
+            <img id="alipayQrCodeImg" src="https://i.postimg.cc/SxGcRxhs/16691747296161-pic-hd.jpg" alt="支付宝付款二维码" class="qr-code-image">
+            <p class="text-lg font-semibold mb-2">请使用支付宝扫描上方二维码完成支付</p>
+            <p class="text-2xl font-bold text-blue-600 mb-4" id="alipayQrPaymentAmount">金额: 0.00 元</p>
+            <p class="text-xs text-gray-500">(模拟支付)</p>
         </div>
     </div>
 
@@ -258,7 +277,7 @@
             policies: { minOrderValue: 5.00, freeShippingThreshold: 25.00, shippingFee: 6.00 }
         };
 
-        // ... (All const declarations for DOM elements remain the same, except sendToWeComBtn is removed) ...
+        // ... (All const declarations for DOM elements remain the same) ...
         const fileUploadInput = document.getElementById('fileUpload');
         const fileUploadStatusP = document.getElementById('fileUploadStatus');
         const noFilesMessage = document.getElementById('noFilesMessage');
@@ -299,11 +318,18 @@
         const qrPaymentModal = document.getElementById('qrPaymentModal');
         const closeQrModalBtn = document.getElementById('closeQrModalBtn');
         const qrPaymentAmountEl = document.getElementById('qrPaymentAmount');
+
+        const alipayQrPaymentModal = document.getElementById('alipayQrPaymentModal'); 
+        const closeAlipayQrModalBtn = document.getElementById('closeAlipayQrModalBtn'); 
+        const alipayQrPaymentAmountEl = document.getElementById('alipayQrPaymentAmount'); 
+
         const siteLogo = document.getElementById('siteLogo');
 
         let uploadedFilesData = []; 
         let activeFileId = null; 
         let globalFileIdCounter = 0;
+        let filesProcessedCounter = 0; 
+        let totalFilesToProcess = 0;   
         
         let currentPreviewPdfDoc = null; 
         let pdfPreviewScrollHandler = null; 
@@ -316,7 +342,11 @@
         fileUploadInput.addEventListener('change', function(event) {
             const files = event.target.files;
             if (!files.length) return;
-            fileUploadStatusP.textContent = `已选择 ${files.length} 个文件，正在处理...`;
+
+            totalFilesToProcess = files.length;
+            filesProcessedCounter = 0;
+            fileUploadStatusP.textContent = `已选择 ${files.length} 个文件，正在处理 1/${totalFilesToProcess}...`;
+            fileUploadStatusP.className = 'mt-1 text-xs text-blue-600';
             
             Array.from(files).forEach(file => {
                 const fileId = generateUniqueFileId();
@@ -337,12 +367,29 @@
                 uploadedFilesData.push(fileEntry);
                 processSingleFileEntry(fileEntry); 
             });
-            renderFileList();
-            if (uploadedFilesData.length > 0 && !activeFileId) {
-                setActiveFile(uploadedFilesData[0].id); 
-            }
             fileUploadInput.value = ''; 
         });
+        
+        function checkAllFilesProcessed() {
+            filesProcessedCounter++;
+            if (filesProcessedCounter < totalFilesToProcess) {
+                 fileUploadStatusP.textContent = `已选择 ${totalFilesToProcess} 个文件，正在处理 ${filesProcessedCounter + 1}/${totalFilesToProcess}...`;
+            } else if (filesProcessedCounter === totalFilesToProcess) {
+                fileUploadStatusP.textContent = `${totalFilesToProcess} 个文件处理完成。`;
+                fileUploadStatusP.className = 'mt-1 text-xs text-green-600';
+                renderFileList();
+                if (uploadedFilesData.length > 0 && !activeFileId) {
+                    setActiveFile(uploadedFilesData[0].id); 
+                }
+                setTimeout(() => {
+                    if (fileUploadStatusP.textContent === `${totalFilesToProcess} 个文件处理完成。`) { 
+                         fileUploadStatusP.textContent = 'PDF格式可自动计算页数并支持预览。Word等其他格式请手动输入页数。推荐转换为PDF后上传。';
+                         fileUploadStatusP.className = 'mt-1 text-xs text-gray-500';
+                    }
+                }, 5000);
+            }
+        }
+
 
         function processSingleFileEntry(fileEntry) {
             if (fileEntry.fileObject.type === "application/pdf") {
@@ -357,25 +404,21 @@
                             activeFileTotalPagesInput.readOnly = true;
                         }
                         addDefaultSegmentForFile(fileEntry); 
-                        renderFileList(); 
-                        calculatePrice();
+                        checkAllFilesProcessed(); 
                     }).catch(err => {
                         console.error("读取PDF页数时出错 for " + fileEntry.fileName + ":", err);
                         fileEntry.docTotalPages = 1; 
                         if (fileEntry.id === activeFileId) activeFileTotalPagesInput.readOnly = false;
                         addDefaultSegmentForFile(fileEntry);
-                        renderFileList();
-                        calculatePrice();
+                        checkAllFilesProcessed();
                     });
                 };
                 reader.onerror = function() {
                     console.error("读取文件时出错 for " + fileEntry.fileName);
-                    fileUploadStatusP.textContent = `读取文件 ${fileEntry.fileName} 失败，请重试或手动输入页数。`;
                     fileEntry.docTotalPages = 1; 
                     if (fileEntry.id === activeFileId) activeFileTotalPagesInput.readOnly = false;
                     addDefaultSegmentForFile(fileEntry);
-                    renderFileList();
-                    calculatePrice();
+                    checkAllFilesProcessed();
                 };
                 reader.readAsArrayBuffer(fileEntry.fileObject);
             } else {
@@ -383,8 +426,7 @@
                     activeFileTotalPagesInput.readOnly = false;
                 }
                 addDefaultSegmentForFile(fileEntry);
-                renderFileList();
-                calculatePrice();
+                checkAllFilesProcessed();
             }
         }
         
@@ -1074,8 +1116,8 @@
 
 
         // Event Listeners
-        // quantityInput.addEventListener('input', calculatePrice); // Global quantity listener removed
-        // bindingTypeSelect.addEventListener('change', () => { updateBindingNote(); calculatePrice(); }); // Global binding listener removed
+        // quantityInput.addEventListener('input', calculatePrice); // Now per-file
+        // bindingTypeSelect.addEventListener('change', () => { updateBindingNote(); calculatePrice(); }); // Now per-file
         
         submitOrderButton.addEventListener('click', () => {
             if (uploadedFilesData.length === 0) {
@@ -1090,9 +1132,11 @@
 
         // sendToWeComBtn event listener removed
 
+
         alipayBtn.addEventListener('click', function() {
             const totalAmount = summaryTotalCostEl.textContent;
-            alert(`即将跳转至支付宝支付，订单金额：${totalAmount}`);
+            alipayQrPaymentAmountEl.textContent = `金额: ${totalAmount}`;
+            alipayQrPaymentModal.classList.remove('hidden');
         });
 
         qrPayBtn.addEventListener('click', function() {
@@ -1107,6 +1151,15 @@
         qrPaymentModal.addEventListener('click', function(event) {
             if (event.target === qrPaymentModal) {
                 qrPaymentModal.classList.add('hidden');
+            }
+        });
+
+        closeAlipayQrModalBtn.addEventListener('click', function() { 
+            alipayQrPaymentModal.classList.add('hidden');
+        });
+        alipayQrPaymentModal.addEventListener('click', function(event) { 
+            if (event.target === alipayQrPaymentModal) {
+                alipayQrPaymentModal.classList.add('hidden');
             }
         });
 

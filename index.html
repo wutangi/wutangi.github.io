@@ -20,6 +20,7 @@
         .modal-content { background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 90vw; display: flex; flex-direction: column; }
         .pdf-preview-modal-content { max-height: 90vh; overflow: hidden; }
         .qr-payment-modal-content { max-width: 400px; text-align: center; }
+        .price-summary-modal-content { max-width: 800px; width: 90vw; } /* Wider for table */
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
         .pdf-preview-canvas-container { flex-grow: 1; overflow-y: auto; border: 1px solid #ccc; background-color: #f9f9f9; }
         .pdf-preview-canvas-container canvas { max-width: 100%; height: auto; display: block; margin: 0 auto 10px auto; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -38,6 +39,45 @@
         .file-item { transition: background-color 0.2s ease-in-out; }
         .file-item.active-file { background-color: #ebf8ff; border-left: 4px solid #3b82f6; }
         .action-buttons-container button, .payment-buttons-container button { margin-bottom: 0.5rem; }
+        
+        /* Styles for the printable summary table within the modal */
+        #priceSummaryModalContent table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1rem;
+        }
+        #priceSummaryModalContent th, #priceSummaryModalContent td {
+            border: 1px solid #e2e8f0; /* Tailwind gray-300 */
+            padding: 8px;
+            text-align: left;
+            font-size: 0.875rem; /* Tailwind text-sm */
+        }
+        #priceSummaryModalContent th {
+            background-color: #f7fafc; /* Tailwind gray-100 */
+        }
+        #priceSummaryModalContent .total-row td {
+            font-weight: bold;
+            border-top: 2px solid #cbd5e0; /* Tailwind gray-400 */
+        }
+        @media print {
+            body * { visibility: hidden; }
+            #priceSummaryModalContent, #priceSummaryModalContent * { visibility: visible; }
+            #priceSummaryModalContent { 
+                position: absolute; 
+                left: 0; 
+                top: 0; 
+                width: 100%; 
+                max-width: 100%;
+                max-height: none;
+                overflow: visible;
+                box-shadow: none;
+                border-radius: 0;
+                padding: 0;
+            }
+            #priceSummaryModal .modal-header h3 { font-size: 1.5rem; margin-bottom: 0.5rem;}
+            #priceSummaryModal .modal-header button, #priceSummaryModal .flex.justify-end { display: none !important; } /* Hide close and action buttons when printing */
+        }
+
     </style>
 </head>
 <body class="bg-gray-100">
@@ -181,7 +221,7 @@
             </div>
             <div class="action-buttons-container mt-6">
                  <button id="submitOrder" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-150 ease-in-out">
-                    导出订单信息
+                    生成价格总览表
                 </button>
                 </div>
             <div class="payment-buttons-container"> <button id="alipayBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-colors">
@@ -245,6 +285,21 @@
             <p class="text-lg font-semibold mb-2">请使用支付宝扫描上方二维码完成支付</p>
             <p class="text-2xl font-bold text-blue-600 mb-4" id="alipayQrPaymentAmount">金额: 0.00 元</p>
             <p class="text-xs text-gray-500"></p>
+        </div>
+    </div>
+    
+    <div id="priceSummaryPrintModal" class="modal-overlay hidden">
+        <div class="modal-content price-summary-modal-content">
+            <div class="modal-header">
+                <h3 id="priceSummaryPrintModalTitle" class="text-xl font-semibold">价格总览表</h3>
+                <button id="closePriceSummaryPrintModalBtn" class="text-gray-700 hover:text-red-500 text-2xl">&times;</button>
+            </div>
+            <div id="priceSummaryPrintModalContent" class="text-sm p-4 overflow-y-auto" style="max-height: 70vh;">
+                </div>
+            <div class="mt-4 pt-4 border-t flex justify-end gap-2">
+                <button id="printPriceSummaryBtn" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">打印此总览</button>
+                <button id="downloadPriceSummaryHtmlBtn" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">下载HTML</button>
+            </div>
         </div>
     </div>
 
@@ -321,6 +376,14 @@
         const alipayQrPaymentModal = document.getElementById('alipayQrPaymentModal'); 
         const closeAlipayQrModalBtn = document.getElementById('closeAlipayQrModalBtn'); 
         const alipayQrPaymentAmountEl = document.getElementById('alipayQrPaymentAmount'); 
+
+        const priceSummaryPrintModal = document.getElementById('priceSummaryPrintModal');
+        const priceSummaryPrintModalTitle = document.getElementById('priceSummaryPrintModalTitle');
+        const priceSummaryPrintModalContent = document.getElementById('priceSummaryPrintModalContent');
+        const closePriceSummaryPrintModalBtn = document.getElementById('closePriceSummaryPrintModalBtn');
+        const printPriceSummaryBtn = document.getElementById('printPriceSummaryBtn');
+        const downloadPriceSummaryHtmlBtn = document.getElementById('downloadPriceSummaryHtmlBtn');
+
 
         const siteLogo = document.getElementById('siteLogo');
 
@@ -1144,15 +1207,66 @@
                 return;
             }
             const orderDetails = getOrderDetailsForApi(false); 
-            exportOrderToCsv(orderDetails); 
             
-            // submitOrderButton.classList.add('hidden'); // No longer hiding
-            // document.querySelector('.payment-buttons-container').classList.remove('hidden'); // No longer showing based on this click
+            // Generate HTML for modal
+            let priceSummaryHtml = `<h3 class="text-xl font-semibold mb-2">订单价格总览 #${orderDetails.orderNumber}</h3>`;
+            priceSummaryHtml += `<p class="text-xs text-gray-600 mb-4">下单时间: ${orderDetails.orderTime}</p>`;
+            priceSummaryHtml += `<table class="w-full"><thead><tr><th>项目详情</th><th class="text-right">金额 (元)</th></tr></thead><tbody>`;
 
-            alert(`订单已生成！\n订单号: ${orderDetails.orderNumber}\n订单详情CSV文件已开始下载。\n\n请通过微信私聊发送原始打印文件、导出的订单CSV文件和收货信息等以最终确认订单。`);
+            detailedPrintCostsBody.querySelectorAll('tr.detailed-cost-row').forEach(row => {
+                priceSummaryHtml += `<tr>${row.innerHTML}</tr>`;
+            });
+            
+            priceSummaryHtml += `<tr><td>${summaryBasePrintCostLabel.textContent}</td><td class="text-right font-medium">${summaryBasePrintCostEl.textContent}</td></tr>`;
+            priceSummaryHtml += `<tr><td>总装订费用:</td><td class="text-right font-medium">${summaryBindingCostEl.textContent}</td></tr>`;
+
+            if (!minOrderAdjustmentRow.classList.contains('hidden')) {
+                priceSummaryHtml += `<tr><td>${minOrderAdjustmentLabel.textContent}</td><td class="text-right font-medium">${summaryMinOrderAdjustmentEl.textContent}</td></tr>`;
+            }
+            priceSummaryHtml += `<tr><td>运费:</td><td class="text-right font-medium">${summaryShippingCostEl.textContent}</td></tr>`;
+            priceSummaryHtml += `<tr class="total-row"><td class="text-lg">预估总价:</td><td class="text-right text-lg">${summaryTotalCostEl.textContent}</td></tr>`;
+            priceSummaryHtml += `</tbody></table>`;
+
+            priceSummaryPrintModalContent.innerHTML = priceSummaryHtml;
+            priceSummaryPrintModalTitle.textContent = `价格总览表 (订单号: ${orderDetails.orderNumber})`;
+            priceSummaryPrintModal.classList.remove('hidden');
+
+            alert(`价格总览表已生成。\n您可以在弹窗中打印或下载此总览。\n\n后续请通过微信私聊发送原始打印文件和收货信息等以最终确认订单。`);
         });
 
-        // sendToWeComBtn event listener removed
+        printPriceSummaryBtn.addEventListener('click', () => {
+            // Temporarily hide buttons in modal for printing
+            const modalActionButtons = priceSummaryPrintModal.querySelector('.flex.justify-end');
+            const originalDisplay = modalActionButtons.style.display;
+            modalActionButtons.style.display = 'none';
+            
+            window.print(); // This will print the whole page, but @media print CSS will style it.
+            
+            modalActionButtons.style.display = originalDisplay; // Restore buttons
+        });
+
+        downloadPriceSummaryHtmlBtn.addEventListener('click', () => {
+            const orderDetails = getOrderDetailsForApi(false); // Get current order details for filename
+            const htmlContent = priceSummaryPrintModalContent.innerHTML;
+            const fullHtml = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>价格总览 - ${orderDetails.orderNumber}</title><style>body{font-family:sans-serif;margin:20px;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:left;} th{background-color:#f2f2f2;} .total-row td{font-weight:bold;border-top:2px solid #aaa;}</style></head><body>${htmlContent}</body></html>`;
+            const blob = new Blob([fullHtml], { type: 'text/html' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `嗨云印价格总览_${orderDetails.orderNumber}.html`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        });
+
+        closePriceSummaryPrintModalBtn.addEventListener('click', () => {
+            priceSummaryPrintModal.classList.add('hidden');
+        });
+        priceSummaryPrintModal.addEventListener('click', function(event) {
+            if (event.target === priceSummaryPrintModal) {
+                closePriceSummaryPrintModalBtn.click();
+            }
+        });
 
 
         alipayBtn.addEventListener('click', function() {
